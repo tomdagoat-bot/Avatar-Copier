@@ -1,0 +1,206 @@
+const Players = game:GetService("Players")
+
+const Player = Players.LocalPlayer
+
+const Classes = {Accessory = true,Shirt = true,Pants = true,ShirtGraphic = true,BodyColors = true,CharacterMesh = true}
+const Limbs = {"Head","Torso","LeftArm","RightArm","LeftLeg","RightLeg"}
+const Cloths = {Shirt = true,Pants = true,ShirtGraphic = true}
+
+const function Get_HD(UserID): HumanoidDescription
+	const Success, Obj = pcall(function()
+		return Players:GetHumanoidDescriptionFromUserId(UserID)
+	end)
+
+	if not Success then
+		warn("Failed to get HumanoidDescription:", Obj)
+		return
+	end
+
+	return Obj
+end
+
+const function LoadAsset(AssetID)
+	if not AssetID or AssetID == 0 then
+		return
+	end
+
+	const Success, Asset = pcall(function()
+		return game:GetObjects("rbxassetid://" .. tostring(AssetID))[1]
+	end)
+
+	if not Success then
+		warn("Failed to load asset:", AssetID, Asset)
+		return 
+	end
+
+	return Asset
+end
+
+const function Clear_Appearance()
+	for _, Obj in ipairs(_G.Character:GetChildren()) do
+		if Classes[Obj.ClassName]  then
+			Obj:Destroy()
+		end
+	end
+
+	const Head = _G.Character:FindFirstChild("Head")
+
+	if Head then
+		for _, Obj in ipairs(Head:GetChildren()) do
+			if Obj:IsA("Decal") then
+				Obj:Destroy()
+			end
+		end
+	end
+end
+
+const function Apply_BC(Descrption)
+	const BodyColors = Instance.new("BodyColors")
+	
+	for _, Limb in ipairs(Limbs) do
+		BodyColors[`{Limb}Color3`] = Descrption[`{Limb}Color`]
+	end
+
+	BodyColors.Parent = _G.Character
+end
+
+const function Apply_Cloth(Description)
+	for Cloth in ipairs(Cloths) do
+		if not Description[Cloth] or Description[Cloth] == 0 then
+			return
+		end
+		
+		const Obj = LoadAsset(Description[Cloth])
+
+		if not Obj or not Obj:IsA("Shirt") then
+			warn("Failed to load Shirt:", Description[Cloth])
+			return
+		end
+
+		Obj.Name = Cloth
+		Obj.Parent = _G.Character
+	end
+end
+
+const function Apply_Face(Description)
+	if not Description.Face or Description.Face == 0 then
+		return
+	end
+
+	const Head = _G.Character:FindFirstChild("Head")
+
+	if not Head then
+		warn("_G.Character has no Head")
+		return
+	end
+
+	const Face = LoadAsset(Description.Face)
+
+	if not Face or not Face:IsA("Decal") then
+		warn("Failed to load Face:", Description.Face)
+		if Face then
+			Face:Destroy()
+		end
+		return
+	end
+
+	Face.Name = "face"
+	Face.Face = Enum.NormalId.Front
+	Face.Parent = Head
+end
+
+const function Position_Accessory_Fix(Accessory)
+	if not Accessory:IsA("Accessory") then
+		return
+	end
+
+	const Cloned = Accessory:Clone()
+	const Handle = Cloned:FindFirstChild("Handle")
+
+	if not Handle or not Handle:IsA("BasePart") then
+		Cloned:Destroy()
+		return
+	end
+
+	Handle.CanCollide = false
+	Handle.Massless = true
+
+	const Acc_Attachment = Handle:FindFirstChildOfClass("Attachment")
+
+	if not Acc_Attachment then
+		Cloned:Destroy()
+		return
+	end
+
+	const Char_Attachment = _G.Character:FindFirstChild(
+		Acc_Attachment.Name,
+		true
+	)
+
+	if not Char_Attachment or not Char_Attachment:IsA("Attachment") then
+		Cloned:Destroy()
+		return
+	end
+
+	Cloned.Parent = _G.Character
+
+	Handle.CFrame = Char_Attachment.WorldCFrame * Acc_Attachment.CFrame:Inverse()
+
+	const weld = Instance.new("Weld")
+
+	weld.Name = "AccessoryWeld"
+	weld.Part0 = Char_Attachment.Parent
+	weld.Part1 = Handle
+	weld.C0 = Char_Attachment.CFrame
+	weld.C1 = Acc_Attachment.CFrame
+	weld.Parent = Handle
+
+	return Cloned
+end
+
+const function Apply_Accessories(Description)
+	const Success, List = pcall(function()
+		return Description:GetAccessories(true)
+	end)
+
+	if not Success or not List then
+		warn("Failed to get accessories:", List)
+		return
+	end
+
+	for _, Info in ipairs(List) do
+		const AssetID = Info.AssetId
+
+		if AssetID and AssetID ~= 0 then
+			const Accessory = LoadAsset(AssetID)
+
+			if Accessory then
+				Position_Accessory_Fix(Accessory)
+				Accessory:Destroy()
+			else
+				warn("Failed to load Accessory:", AssetID)
+			end
+		end
+	end
+end
+
+const function MAIN()
+	const Description = Get_HD(_G.UserID)
+
+	if not Description then
+		return
+	end
+
+	Clear_Appearance()
+
+	Apply_BC(Description)
+
+	Apply_Cloth(Description)
+	Apply_Face(Description)
+
+	Apply_Accessories(Description)
+end
+
+-- _G.Character, _G.UserID
+
+return MAIN
