@@ -1,0 +1,289 @@
+const Players = game:GetService("Players")
+const InsertService = game:GetService("InsertService")
+const LocalPlayer = Players.LocalPlayer
+
+if not game.GetObjects then
+	game.GetObjects = function(game,AssetID)
+		return InsertService:LoadAsset(AssetID)
+	end
+end
+
+const Tables = {
+	Appearance = {"Accessory", "Shirt", "Pants", "ShirtGraphic", "BodyColors", "CharacterMesh"},
+	Limbs = {"Head","Torso","Left Arm","Right Arm","Left Leg","Right Leg"},
+	Desc_Limbs = {"Head","Torso","LeftArm","RightArm","LeftLeg","RightLeg"},
+	Cloth = {"Shirt","Pants","GraphicTShirt"},
+	Connections = {},
+}
+
+const function IsA(Object,Type) : boolean
+	return typeof(Object) == Type
+end
+
+const function ID(Id)
+	return IsA(Id,"number") and `rbxassetid://{tostring(Id)}` or Id
+end
+
+const function Load(AssetID)
+	if not AssetID or AssetID == 0 then
+		return
+	end
+
+	const Objects = game:GetObjects(ID(AssetID))
+	
+	if not Objects or #Objects < 1 then
+		warn(`Failed To Load Object: {AssetID}`)
+		return
+	end
+	
+	return Objects[1]
+end
+
+const function Clear_Look(Character)
+	for _, Obj in pairs(Character:GetChildren()) do
+		if 	table.find(Tables.Appearance,Obj.ClassName) then
+			Obj:Destroy()
+		end
+	end
+	
+	for _, Limb in pairs(Tables.Limbs) do
+		local Limb = Character:FindFirstChild(Limb)
+		
+		if Limb then
+			Limb.Transparency = 0
+			
+			const Conn = Tables.Connections[`{Character.Name}_{Limb}`]
+			
+			if Conn then
+				Conn:Disconnect()
+				Tables.Connections[`{Character.Name}_{Limb}`] = nil
+			end
+		end
+	end
+
+	const Head : Part = Character:FindFirstChild("Head")
+
+	if Head then
+		const face = Head:FindFirstChildOfClass("Decal")
+		
+		if face then
+			face:Destroy()
+		end
+		
+		const Mesh_face = Head:FindFirstChildOfClass("SpecialMesh")
+		
+		if Mesh_face then
+			Mesh_face:Destroy()
+		end
+	end
+end
+
+--[[ Incase Of Using A Custom Avatar ]]--
+
+const function BC(Info,Character)
+	const BodyColors = Instance.new("BodyColors")
+
+	for _, Limb in pairs(Tables.Desc_Limbs) do
+		const Color = Info.BodyColor[Limb]
+
+		if Color then
+			BodyColors[`{Limb}Color3`] = Color
+		end
+	end
+
+	BodyColors.Parent = Character
+end
+
+const function Cloth(Info,Character)
+	for Clothing, AssetID in pairs(Info.Cloth) do
+		if not AssetID or AssetID == 0 then
+			continue
+		end
+
+		const Obj = Load(AssetID)
+		
+		if Obj then
+			Obj.Name = Clothing
+			Obj.Parent = Character
+		end
+	end
+end
+
+const function ACC(Info,Character)
+	for _, AssetID in pairs(Info.Accessories) do
+		if AssetID and AssetID ~= 0 then
+			const Accessory = Load(AssetID)
+
+			Accessory_Fix(Accessory,Character)
+		end
+	end
+end
+
+const function H(Info,Character)
+	for _, Limb in pairs(Info.Hide) do
+		const Part = Character:FindFirstChild(Limb)
+
+		if Part then
+			Part.Transparency = 1
+			
+			Tables.Connections[`{Character.Name}_{Limb}`] = Part:GetPropertyChangedSignal("Transparency"):Connect(function()
+				if Part.Transparency >= 1 then return end
+				Part.Transparency = 1
+			end)
+		end
+	end
+end
+
+--[[ Rest Of Script ]]--
+
+function Accessory_Fix(Accessory,Character)
+	if not Accessory then
+		warn("An Unknown Invalid Accessory Was Attempted To Get Fixed")
+		return
+	end
+	
+	if not Accessory:IsA("Accessory") then
+		Accessory.Parent = Character
+		return
+	end
+
+	local Old = Accessory 
+
+	Accessory = Old:Clone()
+	Old:Destroy()
+
+	const Handle = Accessory:FindFirstChild("Handle")
+
+	if not Handle or not Handle:IsA("BasePart") then
+		Accessory:Destroy()
+		return
+	end
+
+	const Rigid = Handle:FindFirstChildOfClass("RigidConstraint")
+
+	if Rigid then
+		Rigid:Destroy()
+	end
+
+	Handle.CanCollide = false
+	Handle.Massless = true
+
+	const Acc_Attachment = Handle:FindFirstChildOfClass("Attachment")
+
+	if not Acc_Attachment then
+		Accessory:Destroy()
+		return
+	end
+
+	const Char_Attachment = Character:FindFirstChild(Acc_Attachment.Name,true)
+
+	if not Char_Attachment or not Char_Attachment:IsA("Attachment") then
+		Accessory:Destroy()
+		return
+	end
+
+	Accessory.Parent = Character
+
+	Handle.CFrame = Char_Attachment.WorldCFrame * Acc_Attachment.CFrame:Inverse()
+
+	const Weld = Instance.new("Weld")
+	
+	Weld.Name = "AccessoryWeld"
+	Weld.Part0 = Char_Attachment.Parent
+	Weld.Part1 = Handle
+	Weld.C0 = Char_Attachment.CFrame
+	Weld.C1 = Acc_Attachment.CFrame
+	Weld.Parent = Handle
+end
+
+const function Clone_Avatar(UserID,Character,RigType)
+	const Is_R15 = RigType == Enum.HumanoidRigType.R15
+	const Avatar = Players:CreateHumanoidModelFromUserIdAsync(UserID,RigType or Enum.HumanoidRigType.R15)
+	
+	if not Avatar then
+		error(`Failed To Load The Avatar Of UserID: {UserID}\nAre You Sure This User Exists?`)
+	end
+
+	for _, Obj in pairs(Avatar:GetDescendants()) do
+		if Obj.Name == "HumanoidRootPart" then continue end
+
+		if table.find(Tables.Appearance,Obj.ClassName) then
+			Accessory_Fix(Obj,Character)
+		elseif (Obj:IsA("Part") or Obj:IsA("MeshPart")) and Is_R15 then
+			const Limb = Character:FindFirstChild(Obj.Name)
+			
+			if Limb then
+				Limb.Size = Obj.Size
+				Limb.MeshId = Obj.MeshId
+
+				const AnimConst = Limb:FindFirstChildOfClass("AnimationConstraint")
+				
+				if AnimConst then
+					AnimConst.Transform = Obj:FindFirstChild(AnimConst.Name).Transform
+				end
+			end
+		end
+	end
+	
+	const Avatar_Head = Avatar:FindFirstChild("Head")
+	
+	if not Avatar_Head then
+		warn("There Has Been An Error Loading The Avatar Face Of:",UserID)
+		Avatar:Destroy()
+		
+		return
+	end
+	
+	const face = Avatar_Head:FindFirstChild("face")
+	const Mesh_face = Avatar_Head:FindFirstChildOfClass("SpecialMesh")
+	
+	const Head = Character:FindFirstChild("Head")
+	
+	if face and Head and Mesh_face then
+		face.Parent = Head
+		Mesh_face.Parent = Head
+	end
+	
+	Avatar:Destroy()
+end
+
+function Main(Character,Modify)
+	if not Character then
+		Character = LocalPlayer.Character
+	end
+	
+	if IsA(Modify,"table") then
+		if not Modify.KeepCurrent then
+			Clear_Look(Character)
+		end
+		
+		BC(Modify,Character)
+		ACC(Modify,Character)
+		Cloth(Modify,Character)
+		
+		if Modify.Hide then
+			if Modify.Hide == "All" then
+				Modify.Hide = table.clone(Tables.Limbs)
+			elseif table.find(Modify.Hide,"Exclude") then
+				const Save = table.clone(Modify.Hide)
+			
+				Modify.Hide = table.clone(Tables.Limbs)
+			
+				for index in Save do
+					table.remove(Modify.Hide,index)
+				end
+			
+				table.clear(Save)
+			end
+		end
+		
+		H(Modify,Character)		
+	elseif IsA(Modify,"number") then
+		Clear_Look(Character)
+		Clone_Avatar(Modify,Character,Character:FindFirstChildOfClass("Humanoid").RigType)
+	else
+		error("you focking morron, use a valid parameter, either a number (userid) or a table")
+	end
+end
+
+return Main
